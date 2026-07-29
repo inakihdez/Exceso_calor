@@ -128,6 +128,48 @@ def resumen_mes_nacional(archivo, anio, mes):
     return exceso, deficit
 
 
+def serie_historica_nacional(archivo):
+    """
+    Genera la serie histórica mensual completa a nivel nacional (sexo=all,
+    edad=all), en formato ancho: una fila por año/mes con las dos causas
+    (exceso de calor / exceso de frío) en columnas.
+    """
+    df = _leer_isciii(archivo)
+
+    df_filtrado = df[
+        (df["ambito"].astype(str).str.strip() == "nacional")
+        & (df["cod_sexo"].astype(str).str.strip() == "all")
+        & (df["cod_gedad"].astype(str).str.strip() == "all")
+    ].copy()
+
+    df_filtrado["Año"] = df_filtrado["fecha_defuncion"].dt.year
+    df_filtrado["Periodo"] = df_filtrado["fecha_defuncion"].dt.month
+
+    resumen = (
+        df_filtrado.groupby(["Año", "Periodo"], as_index=False)
+        .agg(
+            exceso=("defunciones_atrib_exc_temp", "sum"),
+            deficit=("defunciones_atrib_def_temp", "sum"),
+        )
+    )
+    resumen["exceso"] = resumen["exceso"].round(0).astype(int)
+    resumen["deficit"] = resumen["deficit"].round(0).astype(int)
+    resumen = resumen.sort_values(["Año", "Periodo"]).reset_index(drop=True)
+    resumen.insert(0, "Territorio", "España")
+    return resumen
+
+
+def formatear_serie_texto(resumen):
+    """Convierte la serie histórica en texto plano con columnas separadas por ';'."""
+    lineas = ["Territorio;Año;Periodo;Muertes;Causa de muerte;Muertes;Causa de muerte"]
+    for _, fila in resumen.iterrows():
+        lineas.append(
+            f"{fila['Territorio']};{fila['Año']};{fila['Periodo']};"
+            f"{fila['exceso']};Exceso de calor;{fila['deficit']};Exceso de frío"
+        )
+    return "\n".join(lineas)
+
+
 def mes_anterior(hoy=None):
     hoy = hoy or date.today()
     anio, mes = hoy.year, hoy.month
@@ -163,13 +205,17 @@ def main():
     print(f"Archivo listo para procesar: {ruta_csv}")
 
     resultado = resumen_mes_nacional(ruta_csv, anio, mes)
+    serie = serie_historica_nacional(ruta_csv)
+    texto_serie = formatear_serie_texto(serie)
 
     if resultado is None:
         asunto = f"⚠️ MoMo {nombre_mes} {anio}: sin datos todavía"
         cuerpo = (
             f"Todavía no hay datos consolidados de MoMo para {nombre_mes} de {anio}.\n"
             f"Puede que el ISCIII aún no haya publicado el mes completo.\n\n"
-            f"Fuente: {URL_DATOS}"
+            f"Fuente: {URL_DATOS}\n\n"
+            f"Serie histórica nacional disponible hasta la fecha:\n\n"
+            f"{texto_serie}"
         )
         print("Sin datos para el mes. Enviando aviso.")
     else:
@@ -185,9 +231,12 @@ def main():
             f"Exceso de temperatura:  {exceso:,.0f} defunciones atribuidas\n"
             f"Déficit de temperatura: {deficit:,.0f} defunciones atribuidas\n\n"
             f"Nota: dato provisional del ISCIII, sujeto a revisión en semanas posteriores.\n"
-            f"Fuente: {URL_DATOS}"
+            f"Fuente: {URL_DATOS}\n\n"
+            f"{'-' * 60}\n"
+            f"Serie histórica nacional completa (mensual):\n\n"
+            f"{texto_serie}"
         )
-        print(cuerpo)
+        print(f"Exceso {nombre_mes}: {exceso:.0f} / Déficit: {deficit:.0f}")
 
     enviar_email(asunto, cuerpo)
     print("✓ Email enviado.")
