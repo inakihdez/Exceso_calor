@@ -1,5 +1,120 @@
 [
   {
+    "anio": 2024,
+    "periodo": 7,
+    "temperatura": 45.7
+  },
+  {
+    "anio": 2024,
+    "periodo": 8,
+    "temperatura": 44.3
+  },
+  {
+    "anio": 2024,
+    "periodo": 9,
+    "temperatura": 38.2
+  },
+  {
+    "anio": 2024,
+    "periodo": 10,
+    "temperatura": 36.2
+  },
+  {
+    "anio": 2024,
+    "periodo": 11,
+    "temperatura": 37.1
+  },
+  {
+    "anio": 2024,
+    "periodo": 12,
+    "temperatura": 31.5
+  },
+  {
+    "anio": 2025,
+    "periodo": 1,
+    "temperatura": 28.1
+  },
+  {
+    "anio": 2025,
+    "periodo": 2,
+    "temperatura": 27.5
+  },
+  {
+    "anio": 2025,
+    "periodo": 3,
+    "temperatura": 30.3
+  },
+  {
+    "anio": 2025,
+    "periodo": 4,
+    "temperatura": 32.4
+  },
+  {
+    "anio": 2025,
+    "periodo": 5,
+    "temperatura": 41.6
+  },
+  {
+    "anio": 2025,
+    "periodo": 6,
+    "temperatura": 46.0
+  },
+  {
+    "anio": 2025,
+    "periodo": 7,
+    "temperatura": 43.3
+  },
+  {
+    "anio": 2025,
+    "periodo": 8,
+    "temperatura": 45.8
+  },
+  {
+    "anio": 2025,
+    "periodo": 9,
+    "temperatura": 41.1
+  },
+  {
+    "anio": 2025,
+    "periodo": 10,
+    "temperatura": 37.6
+  },
+  {
+    "anio": 2025,
+    "periodo": 11,
+    "temperatura": 35.0
+  },
+  {
+    "anio": 2025,
+    "periodo": 12,
+    "temperatura": 28.7
+  },
+  {
+    "anio": 2026,
+    "periodo": 1,
+    "temperatura": 27.2
+  },
+  {
+    "anio": 2026,
+    "periodo": 2,
+    "temperatura": 32.8
+  },
+  {
+    "anio": 2026,
+    "periodo": 3,
+    "temperatura": 29.1
+  },
+  {
+    "anio": 2026,
+    "periodo": 4,
+    "temperatura": 37.9
+  },
+  {
+    "anio": 2026,
+    "periodo": 5,
+    "temperatura": 41.1
+  },
+  {
     "anio": 2026,
     "periodo": 6,
     "temperatura": 45.1
