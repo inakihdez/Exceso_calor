@@ -20,7 +20,7 @@ jobs:
           python-version: '3.11'
 
       - name: Instalar dependencias
-        run: pip install pandas requests
+        run: pip install pandas
 
       - name: Ejecutar informe MoMo
         env:
