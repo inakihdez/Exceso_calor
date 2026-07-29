@@ -9,6 +9,7 @@ on:
 jobs:
   informe:
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # corta el job si algo se queda colgado (ej. ISCIII no responde)
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -25,4 +26,5 @@ jobs:
         env:
           EMAIL_USER: ${{ secrets.EMAIL_USER }}
           EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
-        run: python momo_monthly_report.py
+          PYTHONUNBUFFERED: "1"
+        run: python -u momo_monthly_report.py
