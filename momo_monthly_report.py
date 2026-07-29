@@ -7,15 +7,13 @@ del mes anterior. Reutiliza la lógica de lectura/parseo de momo.py.
 """
 
 import os
-import time
 import zipfile
+import subprocess
 import smtplib
 import ssl
 from datetime import date
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-
-import requests
 
 from momo import _leer_isciii
 
@@ -35,48 +33,53 @@ MESES_NOMBRE = {
 }
 
 
-def descargar_archivo(url=URL_DATOS, destino=ARCHIVO_DESCARGA, intentos=10):
+def descargar_archivo(url=URL_DATOS, destino=ARCHIVO_DESCARGA):
     """
-    Descarga el archivo del ISCIII a disco, con reintentos completos si la
-    conexión se corta.
+    Descarga el archivo del ISCIII usando curl en vez de requests.
 
-    El servidor del ISCIII ignora el header Range (siempre devuelve el
-    archivo completo aunque se pida un trozo), así que no es posible
-    reanudar una descarga parcial: si falla, se reintenta desde cero.
+    La conexión hacia momo.isciii.es resulta inestable desde los runners
+    de GitHub Actions (se corta a mitad de la descarga de forma
+    impredecible). curl maneja los reintentos y la reanudación a nivel de
+    red de forma mucho más robusta que urllib3/requests, así que se
+    delega en él en vez de reimplementar la lógica en Python.
 
-    Se usa una petición simple (sin streaming por trozos) porque en la
-    práctica ha resultado más fiable que iterar la respuesta en chunks:
-    parece que el corte de conexión ocurre con más frecuencia cuando se
-    va leyendo poco a poco.
+    --continue-at - : reanuda desde donde se cortó si el servidor lo
+      permite; si no lo permite, curl detecta que no hay soporte de Range
+      y reinicia la descarga automáticamente en vez de fallar.
+    --retry / --retry-delay / --retry-all-errors: reintenta ante
+      cualquier fallo de conexión, no solo códigos HTTP de error.
     """
-    for intento in range(1, intentos + 1):
-        try:
-            with requests.Session() as session:
-                resp = session.get(url, timeout=(20, 400))
-                resp.raise_for_status()
-                total = int(resp.headers.get("Content-Length", 0))
-                contenido = resp.content
+    if os.path.exists(destino):
+        os.remove(destino)
 
-                if total and len(contenido) != total:
-                    raise requests.exceptions.ChunkedEncodingError(
-                        f"Descarga incompleta: {len(contenido)} de {total} bytes"
-                    )
+    comando = [
+        "curl",
+        "-sS",              # sin barra de progreso, pero sí mostrar errores
+        "-L",                # seguir redirecciones
+        "--fail",             # error si el servidor devuelve un código HTTP de error
+        "--retry", "30",
+        "--retry-delay", "5",
+        "--retry-all-errors",
+        "--continue-at", "-",
+        "--connect-timeout", "30",
+        "--max-time", "3300",  # límite total generoso, por debajo del timeout del job
+        "-o", destino,
+        url,
+    ]
 
-                with open(destino, "wb") as f:
-                    f.write(contenido)
+    resultado = subprocess.run(comando, capture_output=True, text=True)
 
-            print(f"✓ Descarga completa: {os.path.getsize(destino) / 1e6:.1f} MB (intento {intento})")
-            return destino
+    if resultado.returncode != 0:
+        raise RuntimeError(
+            f"curl falló (código {resultado.returncode}).\n"
+            f"stderr: {resultado.stderr.strip()}"
+        )
 
-        except (requests.exceptions.ChunkedEncodingError,
-                requests.exceptions.ConnectionError,
-                requests.exceptions.ReadTimeout) as e:
-            print(f"Intento {intento} fallido ({e}). Reintentando desde cero...")
-            if os.path.exists(destino):
-                os.remove(destino)
-            time.sleep(5)
+    if not os.path.exists(destino) or os.path.getsize(destino) == 0:
+        raise RuntimeError("curl terminó sin errores pero el archivo descargado está vacío.")
 
-    raise RuntimeError(f"No se pudo completar la descarga tras {intentos} intentos.")
+    print(f"✓ Descarga completa: {os.path.getsize(destino) / 1e6:.1f} MB")
+    return destino
 
 
 def extraer_csv(ruta_archivo):
