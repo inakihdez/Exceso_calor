@@ -35,36 +35,37 @@ MESES_NOMBRE = {
 }
 
 
-def descargar_archivo(url=URL_DATOS, destino=ARCHIVO_DESCARGA, intentos=6):
+def descargar_archivo(url=URL_DATOS, destino=ARCHIVO_DESCARGA, intentos=10):
     """
-    Descarga el archivo del ISCIII a disco en streaming, con reintentos
-    completos si la conexión se corta.
+    Descarga el archivo del ISCIII a disco, con reintentos completos si la
+    conexión se corta.
 
     El servidor del ISCIII ignora el header Range (siempre devuelve el
     archivo completo aunque se pida un trozo), así que no es posible
     reanudar una descarga parcial: si falla, se reintenta desde cero.
+
+    Se usa una petición simple (sin streaming por trozos) porque en la
+    práctica ha resultado más fiable que iterar la respuesta en chunks:
+    parece que el corte de conexión ocurre con más frecuencia cuando se
+    va leyendo poco a poco.
     """
     for intento in range(1, intentos + 1):
         try:
             with requests.Session() as session:
-                with session.get(url, stream=True, timeout=(15, 300)) as resp:
-                    resp.raise_for_status()
-                    total = int(resp.headers.get("Content-Length", 0))
-                    descargado = 0
-                    with open(destino, "wb") as f:
-                        for chunk in resp.iter_content(chunk_size=5 * 1024 * 1024):
-                            if chunk:
-                                f.write(chunk)
-                                descargado += len(chunk)
-                                print(f"  {descargado / 1e6:.1f} MB descargados"
-                                      f"{f' / {total / 1e6:.1f} MB' if total else ''}...")
+                resp = session.get(url, timeout=(20, 400))
+                resp.raise_for_status()
+                total = int(resp.headers.get("Content-Length", 0))
+                contenido = resp.content
 
-                    if total and descargado < total:
-                        raise requests.exceptions.ChunkedEncodingError(
-                            f"Descarga incompleta: {descargado} de {total} bytes"
-                        )
+                if total and len(contenido) != total:
+                    raise requests.exceptions.ChunkedEncodingError(
+                        f"Descarga incompleta: {len(contenido)} de {total} bytes"
+                    )
 
-            print(f"✓ Descarga completa: {os.path.getsize(destino) / 1e6:.1f} MB")
+                with open(destino, "wb") as f:
+                    f.write(contenido)
+
+            print(f"✓ Descarga completa: {os.path.getsize(destino) / 1e6:.1f} MB (intento {intento})")
             return destino
 
         except (requests.exceptions.ChunkedEncodingError,
