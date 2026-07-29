@@ -14,6 +14,7 @@ https://opendata.aemet.es/
 
 import os
 import json
+import time
 import smtplib
 import ssl
 import calendar
@@ -71,6 +72,8 @@ def obtener_datos_mes(api_key, anio, mes):
         fin_bloque = min(inicio_bloque + timedelta(days=14), ultimo_dia)
         registros.extend(obtener_datos_rango(api_key, inicio_bloque, fin_bloque))
         inicio_bloque = fin_bloque + timedelta(days=1)
+        if inicio_bloque <= ultimo_dia:
+            time.sleep(1)  # pequeña pausa de cortesía entre bloques
 
     return registros
 
@@ -107,6 +110,10 @@ def session_get_con_reintentos(url, headers=None, intentos=5, timeout=60):
                     f"Revisa que el Secret AEMET_API_KEY esté bien configurado (no vacío, sin "
                     f"espacios ni comillas de más)."
                 )
+            if resp.status_code == 429:
+                print(f"  429 Too Many Requests (intento {intento}), esperando 15s antes de reintentar...")
+                time.sleep(15)
+                continue
             resp.raise_for_status()
             return resp
         except RuntimeError:
