@@ -17,7 +17,7 @@ import json
 import smtplib
 import ssl
 import calendar
-from datetime import date
+from datetime import date, timedelta
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -54,12 +54,31 @@ def mes_anterior(hoy=None):
 
 
 def obtener_datos_mes(api_key, anio, mes):
-    """Descarga los datos climatológicos diarios de todas las estaciones para un mes completo."""
+    """
+    Descarga los datos climatológicos diarios de todas las estaciones para
+    un mes completo.
+
+    El endpoint de AEMET no admite rangos de más de 15 días, así que el
+    mes se trocea en bloques de como mucho 15 días y se combinan los
+    resultados.
+    """
     primer_dia = date(anio, mes, 1)
     ultimo_dia = date(anio, mes, calendar.monthrange(anio, mes)[1])
 
-    fecha_ini = f"{primer_dia.isoformat()}T00:00:00UTC"
-    fecha_fin = f"{ultimo_dia.isoformat()}T23:59:59UTC"
+    registros = []
+    inicio_bloque = primer_dia
+    while inicio_bloque <= ultimo_dia:
+        fin_bloque = min(inicio_bloque + timedelta(days=14), ultimo_dia)
+        registros.extend(obtener_datos_rango(api_key, inicio_bloque, fin_bloque))
+        inicio_bloque = fin_bloque + timedelta(days=1)
+
+    return registros
+
+
+def obtener_datos_rango(api_key, dia_inicio, dia_fin):
+    """Descarga los datos climatológicos diarios de todas las estaciones para un rango de hasta 15 días."""
+    fecha_ini = f"{dia_inicio.isoformat()}T00:00:00UTC"
+    fecha_fin = f"{dia_fin.isoformat()}T23:59:59UTC"
 
     url = ENDPOINT_DIARIOS.format(fecha_ini=fecha_ini, fecha_fin=fecha_fin)
     headers = {"api_key": api_key, "Accept": "application/json"}
@@ -81,8 +100,17 @@ def session_get_con_reintentos(url, headers=None, intentos=5, timeout=60):
     for intento in range(1, intentos + 1):
         try:
             resp = requests.get(url, headers=headers, timeout=timeout)
+            if resp.status_code == 401:
+                # Error de autenticación: no tiene sentido reintentar, siempre va a fallar igual.
+                raise RuntimeError(
+                    f"401 Unauthorized de AEMET. Cuerpo de la respuesta: {resp.text[:500]!r}\n"
+                    f"Revisa que el Secret AEMET_API_KEY esté bien configurado (no vacío, sin "
+                    f"espacios ni comillas de más)."
+                )
             resp.raise_for_status()
             return resp
+        except RuntimeError:
+            raise
         except requests.exceptions.RequestException as e:
             ultima_excepcion = e
             print(f"  Intento {intento} fallido al pedir {url}: {e}")
@@ -160,7 +188,13 @@ def enviar_email(asunto, cuerpo):
 
 
 def main():
-    api_key = os.environ["AEMET_API_KEY"]
+    api_key = os.environ.get("AEMET_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError(
+            "AEMET_API_KEY está vacía o no definida. Comprueba el Secret en "
+            "Settings → Secrets and variables → Actions."
+        )
+
     anio, mes = mes_anterior()
     nombre_mes = MESES_NOMBRE[mes]
 
