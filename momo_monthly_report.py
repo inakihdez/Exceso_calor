@@ -35,70 +35,47 @@ MESES_NOMBRE = {
 }
 
 
-def descargar_archivo(url=URL_DATOS, destino=ARCHIVO_DESCARGA, tam_bloque=15_000_000, intentos_por_bloque=6):
+def descargar_archivo(url=URL_DATOS, destino=ARCHIVO_DESCARGA, intentos=6):
     """
-    Descarga el archivo del ISCIII en bloques explícitos usando Range.
+    Descarga el archivo del ISCIII a disco en streaming, con reintentos
+    completos si la conexión se corta.
 
-    El servidor del ISCIII corta la conexión pasado cierto tiempo (no
-    respeta bien la reanudación de un stream largo), así que en vez de
-    pedir todo el archivo de golpe, se pide en trozos pequeños (~15 MB)
-    que terminan antes de que el servidor los corte. Si un bloque falla,
-    solo se reintenta ese bloque, no el archivo completo.
+    El servidor del ISCIII ignora el header Range (siempre devuelve el
+    archivo completo aunque se pida un trozo), así que no es posible
+    reanudar una descarga parcial: si falla, se reintenta desde cero.
     """
-    session = requests.Session()
-
-    resp_head = session.head(url, timeout=30, allow_redirects=True)
-    total = int(resp_head.headers.get("Content-Length", 0))
-    if not total:
-        raise RuntimeError(
-            "No se pudo determinar el tamaño del archivo (sin Content-Length en la respuesta HEAD)."
-        )
-
-    if not os.path.exists(destino):
-        open(destino, "wb").close()
-    descargado = os.path.getsize(destino)
-
-    while descargado < total:
-        inicio = descargado
-        fin = min(inicio + tam_bloque - 1, total - 1)
-
-        for intento in range(1, intentos_por_bloque + 1):
-            try:
-                headers = {"Range": f"bytes={inicio}-{fin}"}
-                resp = session.get(url, headers=headers, timeout=(15, 120))
-                if resp.status_code not in (200, 206):
+    for intento in range(1, intentos + 1):
+        try:
+            with requests.Session() as session:
+                with session.get(url, stream=True, timeout=(15, 300)) as resp:
                     resp.raise_for_status()
-                if resp.status_code == 200 and inicio > 0:
-                    raise RuntimeError(
-                        "El servidor no respeta las peticiones Range (devolvió 200 en vez de 206). "
-                        "No se puede descargar por bloques con este servidor."
-                    )
+                    total = int(resp.headers.get("Content-Length", 0))
+                    descargado = 0
+                    with open(destino, "wb") as f:
+                        for chunk in resp.iter_content(chunk_size=5 * 1024 * 1024):
+                            if chunk:
+                                f.write(chunk)
+                                descargado += len(chunk)
+                                print(f"  {descargado / 1e6:.1f} MB descargados"
+                                      f"{f' / {total / 1e6:.1f} MB' if total else ''}...")
 
-                bloque = resp.content  # se descarga completo en memoria (bloque pequeño, ~15 MB)
-                esperado = fin - inicio + 1
-                if len(bloque) != esperado:
-                    raise requests.exceptions.ChunkedEncodingError(
-                        f"Bloque incompleto: se esperaban {esperado} bytes, se recibieron {len(bloque)}"
-                    )
+                    if total and descargado < total:
+                        raise requests.exceptions.ChunkedEncodingError(
+                            f"Descarga incompleta: {descargado} de {total} bytes"
+                        )
 
-                with open(destino, "ab") as f:
-                    f.write(bloque)
-                descargado = os.path.getsize(destino)
-                print(f"  {descargado / 1e6:.1f} / {total / 1e6:.1f} MB descargados...")
-                break
+            print(f"✓ Descarga completa: {os.path.getsize(destino) / 1e6:.1f} MB")
+            return destino
 
-            except (requests.exceptions.ChunkedEncodingError,
-                    requests.exceptions.ConnectionError,
-                    requests.exceptions.ReadTimeout) as e:
-                print(f"  Bloque {inicio}-{fin}, intento {intento} fallido ({e}). Reintentando...")
-                time.sleep(3)
-                continue
-        else:
-            raise RuntimeError(
-                f"No se pudo descargar el bloque bytes={inicio}-{fin} tras {intentos_por_bloque} intentos."
-            )
+        except (requests.exceptions.ChunkedEncodingError,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.ReadTimeout) as e:
+            print(f"Intento {intento} fallido ({e}). Reintentando desde cero...")
+            if os.path.exists(destino):
+                os.remove(destino)
+            time.sleep(5)
 
-    return destino
+    raise RuntimeError(f"No se pudo completar la descarga tras {intentos} intentos.")
 
 
 def extraer_csv(ruta_archivo):
