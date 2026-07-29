@@ -7,7 +7,7 @@ del mes anterior. Reutiliza la lógica de lectura/parseo de momo.py.
 """
 
 import os
-import io
+import time
 import zipfile
 import smtplib
 import ssl
@@ -20,6 +20,7 @@ import requests
 from momo import _leer_isciii
 
 URL_DATOS = "https://momo.isciii.es/public/momo/data"
+ARCHIVO_DESCARGA = "momo_data.tmp"  # el dataset completo pesa varios cientos de MB
 
 DESTINATARIOS = [
     "inakihernandez@europapress.es",
@@ -33,30 +34,78 @@ MESES_NOMBRE = {
 }
 
 
-def descargar_csv_isciii(url=URL_DATOS):
+def descargar_archivo(url=URL_DATOS, destino=ARCHIVO_DESCARGA, intentos=8):
     """
-    Descarga el archivo de datos del ISCIII.
-
-    El endpoint público de MoMo puede devolver el CSV directamente o un ZIP
-    que lo contiene, según el momento; se gestionan ambos casos.
+    Descarga el archivo del ISCIII a disco en streaming, con reintentos y
+    reanudación (Range) si la conexión se corta a mitad de camino. El
+    dataset completo puede pesar varios cientos de MB, así que una única
+    petición sin reintentos suele fallar (ChunkedEncodingError/timeout).
     """
-    resp = requests.get(url, timeout=60)
-    resp.raise_for_status()
-    contenido = resp.content
+    session = requests.Session()
 
-    if contenido[:2] == b"PK":  # firma de archivo ZIP
-        with zipfile.ZipFile(io.BytesIO(contenido)) as z:
+    for intento in range(1, intentos + 1):
+        descargado_previo = os.path.getsize(destino) if os.path.exists(destino) else 0
+        headers = {"Range": f"bytes={descargado_previo}-"} if descargado_previo else {}
+        modo = "ab" if descargado_previo else "wb"
+
+        try:
+            with session.get(url, headers=headers, stream=True, timeout=(15, 180)) as resp:
+                if resp.status_code == 416:
+                    # El servidor dice que ya no queda nada más que descargar: hecho.
+                    break
+                if resp.status_code not in (200, 206):
+                    resp.raise_for_status()
+                # Si pedimos Range y el servidor no lo soporta (200 en vez de 206),
+                # reiniciamos desde cero para no duplicar contenido.
+                if descargado_previo and resp.status_code == 200:
+                    modo = "wb"
+                    descargado_previo = 0
+
+                with open(destino, modo) as f:
+                    for chunk in resp.iter_content(chunk_size=1024 * 1024):
+                        if chunk:
+                            f.write(chunk)
+
+            print(f"  Intento {intento}: {os.path.getsize(destino) / 1e6:.1f} MB descargados hasta ahora.")
+            content_length = resp.headers.get("Content-Length")
+            content_range = resp.headers.get("Content-Range")  # formato: bytes start-end/total
+            if content_range:
+                total = int(content_range.split("/")[-1])
+                if os.path.getsize(destino) >= total:
+                    break
+            elif content_length and not descargado_previo:
+                break
+
+        except (requests.exceptions.ChunkedEncodingError, requests.exceptions.ConnectionError) as e:
+            print(f"  Intento {intento} interrumpido ({e}). Reintentando desde el byte "
+                  f"{os.path.getsize(destino) if os.path.exists(destino) else 0}...")
+            time.sleep(5)
+            continue
+    else:
+        raise RuntimeError(f"No se pudo completar la descarga tras {intentos} intentos.")
+
+    return destino
+
+
+def extraer_csv(ruta_archivo):
+    """Si el archivo descargado es un ZIP, extrae el CSV de mayor tamaño dentro. Si no, lo devuelve tal cual."""
+    with open(ruta_archivo, "rb") as f:
+        firma = f.read(2)
+
+    if firma == b"PK":  # firma de archivo ZIP
+        with zipfile.ZipFile(ruta_archivo) as z:
             candidatos = [n for n in z.namelist() if n.lower().endswith(".csv")]
             if not candidatos:
                 raise ValueError(
                     f"El ZIP descargado no contiene ningún CSV. Archivos: {z.namelist()}"
                 )
-            # Si hay varios CSV, se asume que el de detalle diario es el más grande
             candidatos.sort(key=lambda n: z.getinfo(n).file_size, reverse=True)
-            with z.open(candidatos[0]) as f:
-                return io.BytesIO(f.read())
+            destino_csv = "momo_data.csv"
+            with z.open(candidatos[0]) as origen, open(destino_csv, "wb") as f_out:
+                f_out.write(origen.read())
+            return destino_csv
 
-    return io.BytesIO(contenido)
+    return ruta_archivo
 
 
 def resumen_mes_nacional(archivo, anio, mes):
@@ -109,9 +158,11 @@ def main():
     nombre_mes = MESES_NOMBRE[mes]
 
     print(f"Descargando datos ISCIII desde {URL_DATOS}...")
-    archivo = descargar_csv_isciii()
+    ruta_descargada = descargar_archivo()
+    ruta_csv = extraer_csv(ruta_descargada)
+    print(f"Archivo listo para procesar: {ruta_csv}")
 
-    resultado = resumen_mes_nacional(archivo, anio, mes)
+    resultado = resumen_mes_nacional(ruta_csv, anio, mes)
 
     if resultado is None:
         asunto = f"⚠️ MoMo {nombre_mes} {anio}: sin datos todavía"
