@@ -21,6 +21,7 @@ from momo import _leer_isciii
 
 URL_DATOS = "https://momo.isciii.es/public/momo/data"
 ARCHIVO_DESCARGA = "momo_data.tmp"  # el dataset completo pesa varios cientos de MB
+URL_EPDATA = "https://www.epdata.es/datos/muertes-atribuidas-exceso-calor-graficos-estadisticas/679?accion=2"
 
 DESTINATARIOS = [
     "inakihernandez@europapress.es",
@@ -214,6 +215,8 @@ def main():
             f"Todavía no hay datos consolidados de MoMo para {nombre_mes} de {anio}.\n"
             f"Puede que el ISCIII aún no haya publicado el mes completo.\n\n"
             f"Fuente: {URL_DATOS}\n\n"
+            f"Esta tabla actualiza los gráficos de esta plantilla de EpData:\n"
+            f"{URL_EPDATA}\n\n"
             f"Serie histórica nacional disponible hasta la fecha:\n\n"
             f"{texto_serie}"
         )
@@ -232,6 +235,8 @@ def main():
             f"Déficit de temperatura: {deficit:,.0f} defunciones atribuidas\n\n"
             f"Nota: dato provisional del ISCIII, sujeto a revisión en semanas posteriores.\n"
             f"Fuente: {URL_DATOS}\n\n"
+            f"Esta tabla actualiza los gráficos de esta plantilla de EpData:\n"
+            f"{URL_EPDATA}\n\n"
             f"{'-' * 60}\n"
             f"Serie histórica nacional completa (mensual):\n\n"
             f"{texto_serie}"
