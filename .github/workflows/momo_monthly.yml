@@ -9,7 +9,7 @@ on:
 jobs:
   informe:
     runs-on: ubuntu-latest
-    timeout-minutes: 30  # corta el job si algo se queda colgado (ej. ISCIII no responde)
+    timeout-minutes: 60  # corta el job si algo se queda colgado (ej. ISCIII no responde)
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
